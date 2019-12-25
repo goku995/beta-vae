@@ -6,6 +6,7 @@ import preprocess as prep
 import models
 import utils
 from dataset import *
+import torch.nn.functional as F
 from torchvision.utils import save_image
 import torchvision.transforms as transforms
 
@@ -25,6 +26,7 @@ def train(model, device, train_loader, optimizer, epoch, log_interval):
 
     for batch_idx, (imgs, caps, caplens) in enumerate(train_loader):
         imgs = imgs.to(device)
+        # imgs = F.interpolate(imgs, size=(64, 64))
         optimizer.zero_grad()
         output, mu, logvar = model(imgs)
         loss = model.loss(output, imgs, mu, logvar)
@@ -35,7 +37,7 @@ def train(model, device, train_loader, optimizer, epoch, log_interval):
 
         if batch_idx % log_interval == 0:
             print('{} Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                time.ctime(time.time()), epoch, batch_idx * len(imgs),
+                time.ctime(time.time()), epoch, batch_idx,
                 len(train_loader), 100. * batch_idx / len(train_loader), loss.item()))
 
     train_loss /= len(train_loader)
@@ -52,20 +54,21 @@ def test(model, device, test_loader, return_images=0, log_interval=None):
     rect_images = []
 
     with torch.no_grad():
-        for batch_idx, data in enumerate(test_loader):
-            data = data.to(device)
-            output, mu, logvar = model(data)
-            loss = model.loss(output, data, mu, logvar)
+        for batch_idx, (imgs, caps, caplens, _) in enumerate(test_loader):
+            imgs = imgs.to(device)
+            # imgs = F.interpolate(imgs, size=(64, 64))
+            output, mu, logvar = model(imgs)
+            loss = model.loss(output, imgs, mu, logvar)
             test_loss += loss.item()
 
             if return_images > 0 and len(original_images) < return_images:
-                original_images.append(data[0].cpu())
+                original_images.append(imgs[0].cpu())
                 rect_images.append(output[0].cpu())
 
             if log_interval is not None and batch_idx % log_interval == 0:
                 print('{} Test: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     time.ctime(time.time()),
-                    batch_idx * len(data), len(test_loader.dataset),
+                    batch_idx, len(test_loader),
                     100. * batch_idx / len(test_loader), loss.item()))
 
     test_loss /= len(test_loader)

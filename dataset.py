@@ -4,8 +4,10 @@ import h5py
 import json
 import torch
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
+from scipy.misc import imread, imresize
 
 class CaptionDataset(Dataset):
 

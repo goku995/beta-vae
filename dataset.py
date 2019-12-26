@@ -81,20 +81,14 @@ class CaptionDataset(Dataset):
 
         file_key = self.annotations[i // self.cpi]
         annotation = self.annotation_data[file_key]
-        # print("Annotations", annotation, flush=True)
 
         sentences = self.sentence_data[file_key]
         sentence_map = sentences[i % self.cpi]
-        # print(sentence_map)
 
         sentence = sentence_map['sentence'].lower()
         sentence = re.sub(r'[^\w\s]', '', sentence)
         sentence = sentence.split()
 
-        # for sent in sentences:
-        #    print(sent['sentence'])
-
-        # print("caption_data ======== ", sentence_map['sentence'], flush=True)
         sentence_encoding = torch.LongTensor([self.word_map['<start>']] + [self.word_map.get(word, self.word_map['<unk>'])
                                             for word in sentence] + [self.word_map['<end>']] + [self.word_map['<pad>']] * (self.max_len - len(sentence)))
 
@@ -103,9 +97,6 @@ class CaptionDataset(Dataset):
             self.word_map['<start>'], self.word_map['<end>'], self.word_map['<pad>']}]
         caption_sentence = ' '.join(
             self.rev_word_map[idx] for idx in caption_idx)
-
-        # print("caption_data ======== ", caption_sentence, flush=True)
-        # print(sentence_encoding, caption)
 
         caplen = torch.LongTensor([self.caplens[i]])
 

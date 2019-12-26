@@ -140,20 +140,6 @@ val_loader = torch.utils.data.DataLoader(CaptionDataset(data_folder, dataset_nam
                                             num_workers=workers, 
                                             pin_memory=True)
 
-# # training code
-# train_ids, test_ids = prep.split_dataset()
-# print('num train_images:', len(train_ids))
-# print('num test_images:', len(test_ids))
-
-# data_train = prep.ImageDiskLoader(train_ids)
-# data_test = prep.ImageDiskLoader(test_ids)
-
-# kwargs = {'num_workers': multiprocessing.cpu_count(),
-#           'pin_memory': True} if use_cuda else {}
-
-# train_loader = torch.utils.data.DataLoader(data_train, batch_size=BATCH_SIZE, shuffle=True, **kwargs)
-# test_loader = torch.utils.data.DataLoader(data_test, batch_size=TEST_BATCH_SIZE, shuffle=True, **kwargs)
-
 print('latent size:', LATENT_SIZE)
 
 # model = models.BetaVAE(latent_size=LATENT_SIZE).to(device)

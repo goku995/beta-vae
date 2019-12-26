@@ -94,11 +94,7 @@ class BetaVAE(nn.Module):
 
     def loss(self, recon_x, x, mu, logvar):
         # reconstruction losses are summed over all elements and batch
-        recon_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
-        if recon_loss < 0:
-            print(recon_x)
-            print("_________________")
-            print(x)
+        recon_loss = F.mse_loss(recon_x, x)
 
         # see Appendix B from VAE paper:
         # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -132,14 +128,18 @@ class DFCVAE(BetaVAE):
         self.e2 = self._conv(32, 64)
         self.e3 = self._conv(64, 128)
         self.e4 = self._conv(128, 256)
+        self.e5 = self._conv(256, 512)
+        self.e6 = self._conv(512, 1024)
         self.fc_mu = nn.Linear(4096, latent_size)
         self.fc_var = nn.Linear(4096, latent_size)
 
         # decoder
-        self.d1 = self._upconv(256, 128)
-        self.d2 = self._upconv(128, 64)
-        self.d3 = self._upconv(64, 32)
-        self.d4 = self._upconv(32, 3)
+        self.d1 = self._upconv(1024, 512)
+        self.d2 = self._upconv(512, 256)
+        self.d3 = self._upconv(256, 128)
+        self.d4 = self._upconv(128, 64)
+        self.d5 = self._upconv(64, 32)
+        self.d6 = self._upconv(32, 3)
         self.fc_z = nn.Linear(latent_size, 4096)
 
     def encode(self, x):
@@ -147,6 +147,8 @@ class DFCVAE(BetaVAE):
         x = F.leaky_relu(self.e2(x))
         x = F.leaky_relu(self.e3(x))
         x = F.leaky_relu(self.e4(x))
+        x = F.leaky_relu(self.e5(x))
+        x = F.leaky_relu(self.e6(x))
         x = x.view(-1, 4096)
         return self.fc_mu(x), self.fc_var(x)
 
@@ -157,11 +159,13 @@ class DFCVAE(BetaVAE):
 
     def decode(self, z):
         z = self.fc_z(z)
-        z = z.view(-1, 256, 4, 4)
+        z = z.view(-1, 1024, 4, 4)
         z = F.leaky_relu(self.d1(F.interpolate(z, scale_factor=2)))
         z = F.leaky_relu(self.d2(F.interpolate(z, scale_factor=2)))
         z = F.leaky_relu(self.d3(F.interpolate(z, scale_factor=2)))
         z = F.leaky_relu(self.d4(F.interpolate(z, scale_factor=2)))
+        z = F.leaky_relu(self.d5(F.interpolate(z, scale_factor=2)))
+        z = F.leaky_relu(self.d6(F.interpolate(z, scale_factor=2)))
         return torch.sigmoid(z)
 
     def forward(self, x):

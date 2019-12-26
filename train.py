@@ -7,8 +7,10 @@ import models
 import utils
 from dataset import *
 import torch.nn.functional as F
-from torchvision.utils import save_image
 import torchvision.transforms as transforms
+from torch.utils.tensorboard import SummaryWriter
+from torch.nn.utils.rnn import pack_padded_sequence
+from datetime import datetime
 
 class UnNormalize(object):
     def __init__(self, mean, std):
@@ -20,16 +22,28 @@ class UnNormalize(object):
             t.mul_(s).add_(m)
         return tensor
 
-def train(model, device, train_loader, optimizer, epoch, log_interval):
+def train(model, encoder, decoder, criterion, device, train_loader, optimizer, epoch, log_interval):
+
     model.train()
     train_loss = 0
 
     for batch_idx, (imgs, caps, caplens) in enumerate(train_loader):
         imgs = imgs.to(device)
+
+        enc_image,  global_features = encoder(imgs)
+        orig_preds, _, _, _, decode_lengths, _ = decoder(enc_image, global_features, caps, caplens)
+
         # imgs = F.interpolate(imgs, size=(64, 64))
         optimizer.zero_grad()
-        output, mu, logvar = model(imgs)
-        loss = model.loss(output, imgs, mu, logvar)
+
+        rec_imgs, mu, logvar = model(imgs)
+        r_enc_image,  r_global_features = encoder(rec_imgs)
+        rec_preds, _, _, _, _, _ = decoder(r_enc_image, r_global_features, caps, caplens)
+
+        orig_caps = pack_padded_sequence(orig_preds, decode_lengths, batch_first=True)[0]
+        rec_caps = pack_padded_sequence(rec_preds, decode_lengths, batch_first=True)[0]
+
+        loss = model.loss(rec_imgs, imgs, mu, logvar) + criterion(orig_caps, rec_caps)
         loss.backward()
         optimizer.step()
 
@@ -45,7 +59,7 @@ def train(model, device, train_loader, optimizer, epoch, log_interval):
     return train_loss
 
 
-def test(model, device, test_loader, return_images=0, log_interval=None):
+def test(model, encoder, decoder, criterion, device, test_loader, return_images=0, log_interval=None):
     model.eval()
     test_loss = 0
 
@@ -57,13 +71,13 @@ def test(model, device, test_loader, return_images=0, log_interval=None):
         for batch_idx, (imgs, caps, caplens, _) in enumerate(test_loader):
             imgs = imgs.to(device)
             # imgs = F.interpolate(imgs, size=(64, 64))
-            output, mu, logvar = model(imgs)
-            loss = model.loss(output, imgs, mu, logvar)
+            rec_imgs, mu, logvar = model(imgs)
+            loss = model.loss(rec_imgs, imgs, mu, logvar)
             test_loss += loss.item()
 
             if return_images > 0 and len(original_images) < return_images:
                 original_images.append(imgs[0].cpu())
-                rect_images.append(output[0].cpu())
+                rect_images.append(rec_imgs[0].cpu())
 
             if log_interval is not None and batch_idx % log_interval == 0:
                 print('{} Test: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -145,7 +159,15 @@ print('latent size:', LATENT_SIZE)
 # model = models.BetaVAE(latent_size=LATENT_SIZE).to(device)
 model = models.DFCVAE(latent_size=LATENT_SIZE).to(device)
 
+encoder.eval()
+decoder.eval()
+
+criterion = nn.CrossEntropyLoss().to(device)
+
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+now = datetime.now()
+writer = SummaryWriter('./runs/vae_{}'.format(now.strftime("%d_%H_%M")))
 
 if __name__ == "__main__":
 
@@ -153,13 +175,13 @@ if __name__ == "__main__":
     train_losses, test_losses = utils.read_log(LOG_PATH, ([], []))
 
     for epoch in range(start_epoch, EPOCHS + 1):
-        train_loss = train(model, device, train_loader, optimizer, epoch, PRINT_INTERVAL)
-        test_loss, original_images, rect_images = test(model, device, val_loader, return_images=5)
+        train_loss = train(model, encoder, decoder, criterion, device, train_loader, optimizer, epoch, PRINT_INTERVAL)
+        test_loss, original_images, rect_images = test(model, encoder, decoder, criterion, device, val_loader, return_images=5)
 
-        save_image(original_images + rect_images, COMPARE_PATH + str(epoch) + '.png', padding=0, nrow=len(original_images))
+        # save_image(original_images + rect_images, COMPARE_PATH + str(epoch) + '.png', padding=0, nrow=len(original_images))
 
-        train_losses.append((epoch, train_loss))
-        test_losses.append((epoch, test_loss))
-        utils.write_log(LOG_PATH, (train_losses, test_losses))
+        # train_losses.append((epoch, train_loss))
+        # test_losses.append((epoch, test_loss))
+        # utils.write_log(LOG_PATH, (train_losses, test_losses))
 
-        model.save_model(MODEL_PATH + '%03d.pt' % epoch)
+        # model.save_model(MODEL_PATH + '%03d.pt' % epoch)

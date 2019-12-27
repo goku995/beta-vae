@@ -15,14 +15,12 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # parameters
-BATCH_SIZE = 256
-TEST_BATCH_SIZE = 10
 EPOCHS = 400
 
 batch_size = 32
-workers = 0
+workers = 4
 
-LATENT_SIZE = 100
+LATENT_SIZE = 1024
 LEARNING_RATE = 1e-3
 
 USE_CUDA = True
@@ -216,4 +214,4 @@ if __name__ == "__main__":
         # test_losses.append((epoch, test_loss))
         # utils.write_log(LOG_PATH, (train_losses, test_losses))
 
-        # model.save_model(MODEL_PATH + '%03d.pt' % epoch)
+        model.save_model(MODEL_PATH + '%03d.pt' % epoch)

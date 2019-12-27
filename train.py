@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import multiprocessing
 import time, json
@@ -11,6 +12,39 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils.rnn import pack_padded_sequence
 from datetime import datetime
+import matplotlib.pyplot as plt
+
+# parameters
+BATCH_SIZE = 256
+TEST_BATCH_SIZE = 10
+EPOCHS = 400
+
+batch_size = 32
+workers = 0
+
+LATENT_SIZE = 100
+LEARNING_RATE = 1e-3
+
+USE_CUDA = True
+PRINT_INTERVAL = 100
+LOG_PATH = './logs/log.pkl'
+MODEL_PATH = './checkpoints/'
+COMPARE_PATH = './comparisons/'
+
+checkpoint = "checkpoint_32.pth.tar"
+data_folder = '../../../caption_dataset/flickr30k_files/'
+dataset_name = 'flickr30k_5_cap_per_img_5_min_word_freq'
+
+annotation_path = "../../../flickr30k_entities/annotation_data.json"
+sentence_path = "../../../flickr30k_entities/sentence_data.json"
+
+use_cuda = USE_CUDA and torch.cuda.is_available()
+device = torch.device("cuda" if use_cuda else "cpu")
+print('Using device', device)
+print('num cpus:', multiprocessing.cpu_count())
+
+now = datetime.now()
+writer = SummaryWriter('./runs/vae_{}'.format(now.strftime("%d_%H_%M")))
 
 class UnNormalize(object):
     def __init__(self, mean, std):
@@ -29,6 +63,8 @@ def train(model, encoder, decoder, criterion, device, train_loader, optimizer, e
 
     for batch_idx, (imgs, caps, caplens) in enumerate(train_loader):
         imgs = imgs.to(device)
+        caps = caps.to(device)
+        caplens = caplens.to(device)
 
         enc_image,  global_features = encoder(imgs)
         orig_preds, _, _, _, decode_lengths, _ = decoder(enc_image, global_features, caps, caplens)
@@ -43,7 +79,8 @@ def train(model, encoder, decoder, criterion, device, train_loader, optimizer, e
         orig_caps = pack_padded_sequence(orig_preds, decode_lengths, batch_first=True)[0]
         rec_caps = pack_padded_sequence(rec_preds, decode_lengths, batch_first=True)[0]
 
-        loss = model.loss(rec_imgs, imgs, mu, logvar) + criterion(orig_caps, rec_caps)
+        # print("{}\n, {}".format(orig_caps, rec_caps))
+        loss = model.loss(rec_imgs, imgs, mu, logvar) + criterion(rec_caps, orig_caps)
         loss.backward()
         optimizer.step()
 
@@ -52,14 +89,14 @@ def train(model, encoder, decoder, criterion, device, train_loader, optimizer, e
         if batch_idx % log_interval == 0:
             print('{} Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 time.ctime(time.time()), epoch, batch_idx,
-                len(train_loader), 100. * batch_idx / len(train_loader), loss.item()))
+                len(train_loader), 100. * batch_idx / len(train_loader), loss.item()), flush=True)
 
     train_loss /= len(train_loader)
-    print('Train set Average loss:', train_loss)
+    print('Train set Average loss:', train_loss, flush=True)
     return train_loss
 
 
-def test(model, encoder, decoder, criterion, device, test_loader, return_images=0, log_interval=None):
+def test(model, encoder, decoder, criterion, device, test_loader, epoch, return_images=0, log_interval=None):
     model.eval()
     test_loss = 0
 
@@ -74,7 +111,35 @@ def test(model, encoder, decoder, criterion, device, test_loader, return_images=
             rec_imgs, mu, logvar = model(imgs)
             loss = model.loss(rec_imgs, imgs, mu, logvar)
             test_loss += loss.item()
+            
+            if epoch % 5 == 0 and batch_idx%100 == 0:
+                orig_img = unorm(imgs.squeeze(0))
+                orig_img = orig_img.permute(1, 2 , 0).cpu().numpy()
 
+                fig = plt.figure(figsize=(10, 10))
+
+                rows = 1
+                cols = 2
+
+                fig.add_subplot(rows, cols, 1)
+                plt.imshow(orig_img)
+                plt.title("original image {}".format(batch_idx))
+                # writer.add_figure("original image", fig, epoch, True)
+                # plt.clf()
+                
+                rec_img = unorm(rec_imgs.squeeze(0))
+                rec_img = rec_img.permute(1, 2 , 0).cpu().numpy()
+
+                # fig = plt.figure(figsize=(10, 10))
+                
+                fig.add_subplot(rows, cols, 2)
+                plt.imshow(rec_img)
+                plt.title("reconstructed image {}".format(batch_idx))
+                
+                writer.add_figure("vae image", fig, epoch, True)
+                # plt.clf()
+                
+            
             if return_images > 0 and len(original_images) < return_images:
                 original_images.append(imgs[0].cpu())
                 rect_images.append(rec_imgs[0].cpu())
@@ -92,36 +157,6 @@ def test(model, encoder, decoder, criterion, device, test_loader, return_images=
         return test_loss, original_images, rect_images
 
     return test_loss
-
-
-# parameters
-BATCH_SIZE = 256
-TEST_BATCH_SIZE = 10
-EPOCHS = 400
-
-batch_size = 64
-workers = 0 
-
-LATENT_SIZE = 100
-LEARNING_RATE = 1e-3
-
-USE_CUDA = True
-PRINT_INTERVAL = 100
-LOG_PATH = './logs/log.pkl'
-MODEL_PATH = './checkpoints/'
-COMPARE_PATH = './comparisons/'
-
-checkpoint = "checkpoint_32.pth.tar"
-data_folder = '../../../caption_dataset/flickr30k_files/'
-dataset_name = 'flickr30k_5_cap_per_img_5_min_word_freq'  
-
-annotation_path = "../../../flickr30k_entities/annotation_data.json"
-sentence_path = "../../../flickr30k_entities/sentence_data.json"
-
-use_cuda = USE_CUDA and torch.cuda.is_available()
-device = torch.device("cuda" if use_cuda else "cpu")
-print('Using device', device)
-print('num cpus:', multiprocessing.cpu_count())
 
 unorm = UnNormalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 
@@ -162,12 +197,9 @@ model = models.DFCVAE(latent_size=LATENT_SIZE).to(device)
 encoder.eval()
 decoder.eval()
 
-criterion = nn.CrossEntropyLoss().to(device)
+criterion = nn.MSELoss().to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-now = datetime.now()
-writer = SummaryWriter('./runs/vae_{}'.format(now.strftime("%d_%H_%M")))
 
 if __name__ == "__main__":
 
@@ -176,7 +208,7 @@ if __name__ == "__main__":
 
     for epoch in range(start_epoch, EPOCHS + 1):
         train_loss = train(model, encoder, decoder, criterion, device, train_loader, optimizer, epoch, PRINT_INTERVAL)
-        test_loss, original_images, rect_images = test(model, encoder, decoder, criterion, device, val_loader, return_images=5)
+        test_loss, original_images, rect_images = test(model, encoder, decoder, criterion, device, val_loader, epoch, return_images=5)
 
         # save_image(original_images + rect_images, COMPARE_PATH + str(epoch) + '.png', padding=0, nrow=len(original_images))
 

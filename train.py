@@ -22,6 +22,7 @@ workers = 4
 
 LATENT_SIZE = 1024
 LEARNING_RATE = 1e-3
+beta = 2
 
 USE_CUDA = True
 PRINT_INTERVAL = 100
@@ -54,6 +55,19 @@ class UnNormalize(object):
             t.mul_(s).add_(m)
         return tensor
 
+def vae_loss(recon_x, x, mu, logvar, beta=2):
+        # reconstruction losses are summed over all elements and batch
+        recon_loss = F.mse_loss(recon_x, x)
+
+        # see Appendix B from VAE paper:
+        # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+        # https://arxiv.org/abs/1312.6114
+        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        kl_diverge = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        # print(kl_diverge, recon_loss)
+
+        return recon_loss/x.shape[0] , (beta* kl_diverge)/x.shape[0]
+
 def train(model, encoder, decoder, criterion, device, train_loader, optimizer, epoch, log_interval):
 
     model.train()
@@ -78,7 +92,14 @@ def train(model, encoder, decoder, criterion, device, train_loader, optimizer, e
         rec_caps = pack_padded_sequence(rec_preds, decode_lengths, batch_first=True)[0]
 
         # print("{}\n, {}".format(orig_caps, rec_caps))
-        loss = model.loss(rec_imgs, imgs, mu, logvar) + criterion(rec_caps, orig_caps)
+        caption_recon = criterion(rec_caps, orig_caps)
+        image_recon, kl_loss = vae_loss(rec_imgs, imgs, mu, logvar, beta)
+        
+        writer.add_scalar("image recon", image_recon, epoch)
+        writer.add_scalar("kl loss", kl_loss, epoch)
+        writer.add_scalar("caption recon", caption_recon, epoch)
+
+        loss = kl_loss + image_recon + caption_recon
         loss.backward()
         optimizer.step()
 
@@ -190,7 +211,7 @@ val_loader = torch.utils.data.DataLoader(CaptionDataset(data_folder, dataset_nam
 print('latent size:', LATENT_SIZE)
 
 # model = models.BetaVAE(latent_size=LATENT_SIZE).to(device)
-model = models.DFCVAE(latent_size=LATENT_SIZE).to(device)
+model = models.DFCVAE(latent_size=LATENT_SIZE, beta=2).to(device)
 
 encoder.eval()
 decoder.eval()

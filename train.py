@@ -143,20 +143,15 @@ def test(model, encoder, decoder, criterion, device, test_loader, epoch, return_
                 fig.add_subplot(rows, cols, 1)
                 plt.imshow(orig_img)
                 plt.title("original image {}".format(batch_idx))
-                # writer.add_figure("original image", fig, epoch, True)
-                # plt.clf()
                 
                 rec_img = unorm(rec_imgs.squeeze(0))
                 rec_img = rec_img.permute(1, 2 , 0).cpu().numpy()
-
-                # fig = plt.figure(figsize=(10, 10))
                 
                 fig.add_subplot(rows, cols, 2)
                 plt.imshow(rec_img)
                 plt.title("reconstructed image {}".format(batch_idx))
                 
                 writer.add_figure("vae image", fig, epoch, True)
-                # plt.clf()
                 
             
             if return_images > 0 and len(original_images) < return_images:
